@@ -1,4 +1,4 @@
-name: Checklist CI
+name: Checklist CI/CD
 
 on:
   push:
@@ -6,18 +6,49 @@ on:
       - master
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # 1 Clonar repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      # 2 Setup Java
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 17
+          distribution: 'temurin'
+          java-version: '17'
 
+      # 3 Build
       - name: Build with Maven
         run: mvn clean package -DskipTests
+
+      # 4 Preparar SSH
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      # 5 Copiar JAR al EC2
+      - name: Copy jar to EC2
+        run: |
+          scp target/checklist-0.0.1-SNAPSHOT.jar \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/apps/checklist.jar
+
+      # 6 Restart app en EC2
+      - name: Restart application
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            pkill -f checklist.jar || true
+            nohup java -jar /home/ec2-user/apps/checklist.jar > app.log 2>&1 &
+          EOF
+
+      # 7 Health check (opcional pero PRO)
+      - name: Wait for app to be healthy
+        run: |
+          sleep 10
+          curl -f http://${{ secrets.EC2_HOST }}:8080/actuator/health
