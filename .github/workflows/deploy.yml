@@ -10,55 +10,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1 Clonar repo
+      # 1. Checkout
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2 Setup Java
+      # 2. Java for build
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: 17
 
-      # 3 Build
+      # 3. Build
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      # 4 Preparar SSH
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      # 5 Copiar JAR al EC2
+      # 4. Copiar JAR a EC2 (/opt/checklist)
       - name: Copy jar to EC2
-        run: |
-          scp -o StrictHostKeyChecking=no \
-            target/checklist-0.0.1-SNAPSHOT.jar \
-            ec2-user@${{ secrets.EC2_HOST }}:/home/ec2-user/apps/checklist/checklist.jar
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: target/checklist-0.0.1-SNAPSHOT.jar
+          target: /opt/checklist/
+          strip_components: 1
 
-
-          
-          # 6 Restart app en EC2
-      - name: Restart application
-        run: |
-          ssh -o StrictHostKeyChecking=no \
-              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-            export DB_USER=${{ secrets.DB_USER }}
-            export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          
-            cd /home/ec2-user/apps/checklist
-          
-            pkill -f checklist.jar || true
-            ./start.sh
-          EOF
-      
-
-        # 7 Health check (opcional pero PRO)
-      - name: Wait for app to be healthy
-        run: |
-          sleep 40
-          curl -f http://${{ secrets.EC2_HOST }}:8080/actuator/health
+      # 5. Reiniciar servicio systemd
+      - name: Restart checklist service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo systemctl restart checklist
