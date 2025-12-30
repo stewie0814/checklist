@@ -36,8 +36,10 @@ jobs:
       # 5 Copiar JAR al EC2
       - name: Copy jar to EC2
         run: |
-          scp target/checklist-0.0.1-SNAPSHOT.jar \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/apps/checklist.jar
+          scp -o StrictHostKeyChecking=no \
+            target/checklist-0.0.1-SNAPSHOT.jar \
+            ec2-user@${{ secrets.EC2_HOST }}:/home/ec2-user/apps/checklist/checklist.jar
+
 
       # 6 Restart app en EC2
       - name: Restart application
@@ -50,5 +52,5 @@ jobs:
       # 7 Health check (opcional pero PRO)
       - name: Wait for app to be healthy
         run: |
-          sleep 10
+          sleep 40
           curl -f http://${{ secrets.EC2_HOST }}:8080/actuator/health
